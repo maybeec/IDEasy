@@ -96,13 +96,23 @@ public class RepositoryCommandlet extends Commandlet {
       return;
     }
     this.context.debug("Repository configuration: {}", repositoryConfig);
-    List<Path> repositoryPaths = getRepositoryPaths(repositoryConfig, repositoryId);
+    List<String> workspaces = repositoryConfig.workspaces();
+    String repositoryRelativePath = repositoryConfig.path();
+    if (repositoryRelativePath == null) {
+      repositoryRelativePath = repositoryId;
+    }
     Path ideStatusDir = this.context.getIdeHome().resolve(IdeContext.FOLDER_DOT_IDE);
-    this.context.getFileAccess().mkdirs(ideStatusDir);
-    
-    for (Path repositoryPath : repositoryPaths) {
-      String workspaceName = getWorkspaceName(repositoryPath);
+    FileAccess fileAccess = this.context.getFileAccess();
+    fileAccess.mkdirs(ideStatusDir);
+
+    Path firstRepository = null;
+    for (String workspaceName : workspaces) {
+      Path workspacePath = this.context.getIdeHome().resolve(IdeContext.FOLDER_WORKSPACES).resolve(workspaceName);
+      Path repositoryPath = workspacePath.resolve(repositoryRelativePath);
       if (Files.isDirectory(repositoryPath.resolve(GitContext.GIT_FOLDER))) {
+        if (firstRepository == null) {
+          firstRepository = repositoryPath;
+        }
         this.context.info("Repository {} already exists in workspace {} at {}", repositoryId, workspaceName, repositoryPath);
         if (!(this.context.isForceMode() || this.context.isForceRepositories())) {
           this.context.info("Ignoring repository {} in workspace {} - use --force or --force-repositories to rerun setup.", repositoryId, workspaceName);
@@ -112,14 +122,21 @@ public class RepositoryCommandlet extends Commandlet {
       Path repositoryCreatedStatusFile = ideStatusDir.resolve("repository." + repositoryId + "." + workspaceName);
       if (Files.exists(repositoryCreatedStatusFile)) {
         if (!(this.context.isForceMode() || this.context.isForceRepositories())) {
-          this.context.info("Ignoring repository {} in workspace {} because it was already setup before - use --force or --force-repositories for recreation.", repositoryId, workspaceName);
+          this.context.info("Ignoring repository {} in workspace {} because it was already setup before - use --force or --force-repositories for recreation.",
+              repositoryId, workspaceName);
           continue;
         }
       }
-      boolean success = cloneOrPullRepository(repositoryPath, gitUrl, repositoryCreatedStatusFile);
-      if (success) {
-        buildRepository(repositoryConfig, repositoryPath);
-        importRepository(repositoryConfig, repositoryPath, repositoryId);
+      if (firstRepository == null) {
+        boolean success = cloneOrPullRepository(repositoryPath, gitUrl, repositoryCreatedStatusFile);
+        if (success) {
+          firstRepository = repositoryPath;
+          buildRepository(repositoryConfig, repositoryPath);
+          importRepository(repositoryConfig, repositoryPath, repositoryId);
+        }
+      } else {
+        fileAccess.mkdirs(repositoryPath.getParent());
+        fileAccess.symlink(firstRepository, repositoryPath);
       }
     }
   }
@@ -134,29 +151,6 @@ public class RepositoryCommandlet extends Commandlet {
     });
   }
 
-  private List<Path> getRepositoryPaths(RepositoryConfig repositoryConfig, String repositoryId) {
-    Set<String> workspaces = repositoryConfig.workspaces();
-    if (workspaces == null || workspaces.isEmpty()) {
-      workspaces = Set.of(IdeContext.WORKSPACE_MAIN);
-    }
-    String repositoryRelativePath = repositoryConfig.path();
-    if (repositoryRelativePath == null) {
-      repositoryRelativePath = repositoryId;
-    }
-    List<Path> repositoryPaths = new java.util.ArrayList<>();
-    for (String workspace : workspaces) {
-      Path workspacePath = this.context.getIdeHome().resolve(IdeContext.FOLDER_WORKSPACES).resolve(workspace);
-      repositoryPaths.add(workspacePath.resolve(repositoryRelativePath));
-    }
-    return repositoryPaths;
-  }
-
-  private String getWorkspaceName(Path repositoryPath) {
-    Path workspacesFolder = this.context.getIdeHome().resolve(IdeContext.FOLDER_WORKSPACES);
-    Path relativePath = workspacesFolder.relativize(repositoryPath);
-    return relativePath.getName(0).toString();
-  }
-
   private boolean buildRepository(RepositoryConfig repositoryConfig, Path repositoryPath) {
     String buildCmd = repositoryConfig.buildCmd();
     if (buildCmd != null && !buildCmd.isEmpty()) {
@@ -165,7 +159,8 @@ public class RepositoryCommandlet extends Commandlet {
         ToolCommandlet commandlet = this.context.getCommandletManager().getToolCommandlet(command[0]);
         if (commandlet == null) {
           String displayName = (command[0] == null || command[0].isBlank()) ? "<empty>" : "'" + command[0] + "'";
-          this.context.error("Cannot build repository. Required tool '{}' not found. Please check your repository's build_cmd configuration value.", displayName);
+          this.context.error("Cannot build repository. Required tool '{}' not found. Please check your repository's build_cmd configuration value.",
+              displayName);
           return;
         }
         commandlet.reset();
@@ -199,7 +194,8 @@ public class RepositoryCommandlet extends Commandlet {
         ToolCommandlet commandlet = this.context.getCommandletManager().getToolCommandlet(ide);
         if (commandlet == null) {
           String displayName = (ide == null || ide.isBlank()) ? "<empty>" : "'" + ide + "'";
-          step.error("Cannot import repository '{}'. Required IDE '{}' not found. Please check your repository's imports configuration.", repositoryId, displayName);
+          step.error("Cannot import repository '{}'. Required IDE '{}' not found. Please check your repository's imports configuration.", repositoryId,
+              displayName);
         } else if (commandlet instanceof IdeToolCommandlet ideCommandlet) {
           ideCommandlet.importRepository(repositoryPath);
         } else {

@@ -1,6 +1,7 @@
 package com.devonfw.tools.ide.git.repository;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
@@ -23,7 +24,7 @@ import com.devonfw.tools.ide.git.GitUrl;
 public record RepositoryConfig(
     String path,
     String workingSets,
-    Set<String> workspaces,
+    List<String> workspaces,
     String gitUrl,
     String gitBranch,
     String buildPath,
@@ -38,7 +39,7 @@ public record RepositoryConfig(
   public static final String PROPERTY_WORKING_SETS = "workingsets";
 
   /** {@link RepositoryProperties#getProperty(String) Property name} for {@link #workspaces()}. */
-  public static final String PROPERTY_WORKSPACE = "workspace";
+  public static final String PROPERTY_WORKSPACES = "workspaces";
 
   /** {@link RepositoryProperties#getProperty(String) Property name} for {@link #gitUrl()}. */
   public static final String PROPERTY_GIT_URL = "git_url";
@@ -61,6 +62,12 @@ public record RepositoryConfig(
   /** Legacy {@link RepositoryProperties#getProperty(String) property name} for {@link #imports()}. */
   public static final String PROPERTY_ECLIPSE = "eclipse";
 
+  public RepositoryConfig {
+    if (workspaces == null || workspaces.isEmpty()) {
+      throw new IllegalArgumentException("workspaces cannot be empty");
+    }
+  }
+
   /**
    * @return the {@link GitUrl} from {@link #gitUrl()} and {@link #gitBranch()}.
    */
@@ -82,10 +89,10 @@ public record RepositoryConfig(
     RepositoryProperties properties = new RepositoryProperties(filePath, context);
 
     Set<String> importsSet = properties.getImports();
-    Set<String> workspacesSet = properties.getWorkspaces();
+    List<String> workspaces = properties.getWorkspaces();
 
     return new RepositoryConfig(properties.getProperty(PROPERTY_PATH), properties.getProperty(PROPERTY_WORKING_SETS),
-        workspacesSet, properties.getProperty(PROPERTY_GIT_URL, true), properties.getProperty(PROPERTY_GIT_BRANCH),
+        workspaces, properties.getProperty(PROPERTY_GIT_URL, true), properties.getProperty(PROPERTY_GIT_BRANCH),
         properties.getProperty(PROPERTY_BUILD_PATH), properties.getProperty(PROPERTY_BUILD_CMD), importsSet,
         parseBoolean(properties.getProperty(PROPERTY_ACTIVE)));
   }
